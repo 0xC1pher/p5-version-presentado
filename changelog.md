@@ -1,12 +1,94 @@
 # Changelog
 
+
+
 Este archivo documenta los cambios realizados en el código del proyecto de simulación de comunicación OFDM con codificación de canal.
 del archivo 
 
-```python
-         py-version-presentado.py 
+# py-version-presentado.py 
 
 ```
+---
+
+## [1.1.0] - 2025-01-10
+
+### Añadido
+- **Codificación Convolucional**:
+  - Se implementaron las funciones `convolutional_encoding` y `convolutional_decoding` para aplicar codificación y decodificación convolucional a los bits de la imagen.
+  - La codificación convolucional se añadió antes de la modulación QAM/PSK.
+  - La decodificación convolucional se añadió después de la demodulación y el demapping.
+
+- **Turbo Codes**:
+  - Se implementaron las funciones `turbo_encoding` y `turbo_decoding` para simular la codificación y decodificación Turbo utilizando dos codificadores convolucionales.
+  - La codificación Turbo se añadió después de la codificación convolucional y antes de la modulación.
+  - La decodificación Turbo se añadió después de la demodulación y antes de la decodificación convolucional.
+
+- **Integración en el Flujo Principal**:
+  - Se integraron las funciones de codificación y decodificación en el flujo principal del código, manteniendo la coherencia del sistema.
+  - Se añadió la lógica para manejar los bits codificados y decodificados en el proceso de transmisión y recepción.
+
+### Cambios
+- **Mejoras en la Simulación**:
+  - Se ajustó el cálculo del BER para incluir los efectos de la codificación y decodificación.
+  - Se mejoró la visualización de la constelación y la imagen reconstruida.
+
+---
+
+## [1.0.0] - 2025-01-10
+
+### Añadido
+- **Funcionalidad Básica**:
+  - Carga y conversión de imágenes a escala de grises.
+  - Conversión de imágenes a bits y viceversa.
+  - Modulación QPSK, 16-QAM y 64-QAM.
+  - Simulación de transmisión OFDM con prefijo cíclico (CP).
+  - Estimación y ecualización del canal.
+  - Demodulación y demapping de símbolos QAM.
+  - Reconstrucción de la imagen a partir de los bits recibidos.
+
+- **Simulación Monte Carlo**:
+  - Implementación de una simulación Monte Carlo para calcular el BER en función del SNR.
+  - Soporte para múltiples tipos de modulación (QPSK, 16-QAM, 64-QAM).
+
+- **Visualización**:
+  - Gráficos de la constelación modulada y recibida.
+  - Comparación de la imagen original y reconstruida.
+  - Gráfico de BER vs SNR para diferentes modulaciones.
+
+---
+
+## [0.1.0] - 2025-01-10
+
+### Añadido
+- **Estructura Inicial del Proyecto**:
+  - Implementación inicial de funciones para carga de imágenes, modulación y demodulación.
+
+---
+
+## p6 new release
+
+# Changelog
+
+Este archivo documenta los cambios realizados en el código del proyecto de simulación de comunicación OFDM con codificación de canal.
+
+---
+
+## [1.2.0] - 2025-01-10
+
+### Añadido
+- **Implementación de SC-FDM**:
+  - Se añadió la funcionalidad de **pre-codificación (DFT)** antes de la modulación OFDM para convertir los símbolos del dominio del tiempo al dominio de la frecuencia.
+  - Se añadió la funcionalidad de **post-codificación (IDFT)** después de la demodulación OFDM para convertir los símbolos de vuelta al dominio del tiempo.
+  - Se implementaron las funciones `apply_dft` y `apply_idft` para manejar estas transformaciones.
+
+- **Cálculo del PAPR**:
+  - Se añadió la función `calculate_papr` para calcular el **Peak-to-Average Power Ratio (PAPR)** de las señales OFDM y SC-FDM.
+  - Se implementó la función `plot_ccdf` para graficar la **Complementary Cumulative Distribution Function (CCDF)** del PAPR y comparar OFDM y SC-FDM.
+
+- **Integración en el Flujo Principal**:
+  - Se integraron las funciones de pre-codificación y post-codificación en el flujo principal del código.
+  - Se añadió la lógica para calcular y graficar el PAPR en el proceso de transmisión y recepción.
+
 ---
 
 ## [1.1.0] - 2025-01-10
@@ -67,3 +149,4 @@ del archivo
 ## Notas
 - Este archivo `CHANGELOG.md` sigue el formato estándar de [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 - Las versiones siguen el esquema de [Versionado Semántico](https://semver.org/lang/es/).
+
