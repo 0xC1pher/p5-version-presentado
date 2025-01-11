@@ -65,8 +65,9 @@ del archivo
 
 ---
 
-## p6 new release
+# p6 new release
 
+```
 # Changelog
 
 Este archivo documenta los cambios realizados en el código del proyecto de simulación de comunicación OFDM con codificación de canal.
