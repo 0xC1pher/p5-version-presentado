@@ -70,7 +70,7 @@ del archivo
 ```
 ---
 
-## [1.2.0] - 2025-01-10
+## [1.2.0] - 2025-01-11
 
 ### Añadido
 - **Implementación de SC-FDM**:
@@ -88,7 +88,7 @@ del archivo
 
 ---
 
-## [1.1.0] - 2025-01-10
+## [1.1.0] - 2025-01-11
 
 ### Añadido
 - **Codificación Convolucional**:
@@ -112,7 +112,7 @@ del archivo
 
 ---
 
-## [1.0.0] - 2025-01-10
+## [1.0.0] - 2025-01-11
 
 ### Añadido
 - **Funcionalidad Básica**:
@@ -135,7 +135,7 @@ del archivo
 
 ---
 
-## [0.1.0] - 2025-01-10
+## [0.1.0] - 2025-01-11
 
 ### Añadido
 - **Estructura Inicial del Proyecto**:
