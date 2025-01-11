@@ -64,14 +64,10 @@ del archivo
   - Implementación inicial de funciones para carga de imágenes, modulación y demodulación.
 
 ---
-
+```
 # p6 new release
 
 ```
-# Changelog
-
-Este archivo documenta los cambios realizados en el código del proyecto de simulación de comunicación OFDM con codificación de canal.
-
 ---
 
 ## [1.2.0] - 2025-01-10
