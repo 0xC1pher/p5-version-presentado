@@ -765,10 +765,84 @@ def plot_ccdf(papr_values, label):
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
     plt.legend()
 
-########################### funcion MAIN #######################################################################################33
+def maximum_ratio_combining(signals, snr_values):
+    """
+    Combina las señales recibidas en múltiples antenas usando Maximum-Ratio Combining (MRC).
+    
+    Args:
+        signals (list): Lista de señales recibidas en cada antena.
+        snr_values (list): Lista de valores de SNR para cada antena.
+    
+    Returns:
+        numpy array: Señal combinada usando MRC.
+    """
+    # Calcular los pesos de MRC basados en el SNR
+    weights = np.sqrt(snr_values)
+    weights /= np.sum(weights)  # Normalizar los pesos
+    
+    # Combinar las señales usando los pesos
+    combined_signal = np.zeros_like(signals[0])
+    for signal, weight in zip(signals, weights):
+        combined_signal += signal * weight
+    
+    return combined_signal
+
+def process_signals_with_diversity(ofdm_canal, snr_values, num_antennas):
+    """
+    Procesa las señales recibidas en múltiples antenas usando diversidad.
+    
+    Args:
+        ofdm_canal (list): Lista de señales OFDM recibidas en cada antena.
+        snr_values (list): Lista de valores de SNR para cada antena.
+        num_antennas (int): Número de antenas a utilizar (2, 4, 8).
+    
+    Returns:
+        numpy array: Señal combinada usando MRC.
+    """
+    # Seleccionar las señales de las antenas correspondientes
+    signals = ofdm_canal[:num_antennas]
+    snr = snr_values[:num_antennas]
+    
+    # Aplicar MRC
+    combined_signal = maximum_ratio_combining(signals, snr)
+    
+    return combined_signal
+
+def reconstruct_image_with_diversity(bits_recuperados, ancho, alto):
+    """
+    Reconstruye la imagen a partir de los bits recuperados usando diversidad.
+    
+    Args:
+        bits_recuperados (numpy array): Bits recuperados después de la combinación MRC.
+        ancho (int): Ancho de la imagen.
+        alto (int): Alto de la imagen.
+    
+    Returns:
+        numpy array: Imagen reconstruida.
+    """
+    reconstructed_image, _ = reconstruct_image_from_bits(bits_recuperados, ancho, alto)
+    return reconstructed_image
+
+def plot_ber_vs_snr(ber_results, snr_range):
+    """
+    Grafica el BER vs SNR para cada antena en una misma gráfica.
+    
+    Args:
+        ber_results (dict): Diccionario con los resultados de BER para cada antena.
+        snr_range (list): Rango de valores de SNR.
+    """
+    plt.figure(figsize=(10, 6))
+    for antenna, ber_values in ber_results.items():
+        plt.semilogy(snr_range, ber_values, label=f'Antena {antenna}')
+    
+    plt.xlabel('SNR (dB)')
+    plt.ylabel('BER')
+    plt.title('BER vs SNR para Cada Antena')
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+    plt.legend()
+    plt.show()
 
 def main():
-    
     # Ruta de la imagen
     image_path = "pluto.jpg"
     
@@ -791,7 +865,27 @@ def main():
     turbo_encoded_bits = turbo_encoding(encoded_bits)
     
     # Solicitar tipo de modulación qpsk, 16qam, 64qam
-    modulation_type = select_modulation() # se obtiene "qpsk", "16qam" o "64qam"
+    modulation_type = select_modulation()  # Se obtiene "qpsk", "16qam" o "64qam"
+    
+    # Solicitar ancho de banda y espaciado entre subportadoras
+    bw, delta_f = get_bandwidth_and_spacing()
+    
+    # Calcular el número de subportadoras activas (N_c)
+    nc = calculate_nc(bw, delta_f)
+    
+    # Solicitar longitud del prefijo cíclico (CP)
+    CP = int(get_longitud_CP())
+    
+    # Solicitar valor de SNR en dB
+    SNRdb = get_snr()
+    
+    # Definir otras variables necesarias
+    pilotCarriers = [0, 16, 32, 48]  # Subportadoras piloto
+    dataCarriers = np.delete(np.arange(nc), pilotCarriers)  # Subportadoras de datos
+    pilotValue = 1 + 1j  # Valor de las subportadoras piloto
+    n = 64  # Tamaño de la IFFT
+    H_exact = np.ones(nc, dtype=complex)  # Respuesta exacta del canal (simulada)
+    channelResponse = np.array([1, 0, 0.3 + 0.3j])  # Respuesta del canal
     
     # Realiza Modulación QPSK, 16-QAM o 64-QAM
     symbols = modulate_with_mapping(turbo_encoded_bits, modulation_type)

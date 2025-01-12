@@ -875,6 +875,17 @@ def main():
     
     print(f"Primeros 10 símbolos que entraran a mod OFDM: {symbols[:10]}")
     
+    # Definir parámetros OFDM (corregido)
+    nc = 64  # Número de subportadoras
+    pilotCarriers = [0, 16, 32, 48]  # Subportadoras piloto
+    dataCarriers = np.delete(np.arange(nc), pilotCarriers)  # Subportadoras de datos
+    pilotValue = 1 + 1j  # Valor de las subportadoras piloto
+    n = 64  # Tamaño de la IFFT
+    CP = 16  # Longitud del prefijo cíclico
+    SNRdb = 20  # SNR en dB
+    H_exact = np.ones(nc, dtype=complex)  # Respuesta exacta del canal (simulada)
+    channelResponse = np.array([1, 0, 0.3 + 0.3j])  # Respuesta del canal
+    
     # Aplicar DFT a los símbolos modulados (SC-FDM)
     symbols_freq = apply_dft(symbols)
     
