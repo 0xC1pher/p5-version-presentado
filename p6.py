@@ -241,7 +241,7 @@ def calculate_nc(bw, delta_f):
     Returns:
         int: Número de subportadoras activas (N_c).
     """
-    return bw / delta_f
+    return int(bw / delta_f)  # Redondear hacia abajo
 
 def OFDM_symbol(QAM_payload, pilotCarriers, dataCarriers, pilotValue, nc):
     """
@@ -872,13 +872,8 @@ def main():
     
     # Calcular el número de subportadoras activas (N_c)
     nc = calculate_nc(bw, delta_f)
-    
-    # Solicitar longitud del prefijo cíclico (CP)
-    CP = int(get_longitud_CP())
-    
-    # Solicitar valor de SNR en dB
-    SNRdb = get_snr()
-    
+    print(f"Número de subportadoras activas (N_c): {nc}")
+
     # Definir otras variables necesarias
     pilotCarriers = [0, 16, 32, 48]  # Subportadoras piloto
     dataCarriers = np.delete(np.arange(nc), pilotCarriers)  # Subportadoras de datos
