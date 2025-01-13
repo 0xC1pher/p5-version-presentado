@@ -7,6 +7,28 @@ import numpy as np
 from scipy.interpolate import interp1d
 from commpy.filters import rcosfilter
 from commpy.channelcoding import Trellis, conv_encode, viterbi_decode
+import logging
+
+# Configurar logging antes de usarlo
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s: %(message)s'
+)
+
+# Si quieres usar logging.info() con variables, debes hacerlo dentro de una función o bloque donde las variables estén definidas
+def main():
+    image_path = "pluto.jpg"
+    image = load_image(image_path)
+    if image is None:
+        logging.error("No se pudo cargar la imagen")
+        return
+
+    image_bw = convert_to_grayscale(image)
+    bitsbn, ancho, alto = image_to_bits_bw(image_bw)
+    
+    # Ahora sí puedes usar logging
+    logging.info(f"Dimensiones de imagen: {ancho} x {alto}")
+
 
 def load_image(image_path):
     """
@@ -27,47 +49,37 @@ def convert_to_grayscale(image):
     return imagen_bn
 
 def image_to_bits_bw(image):
-    """
-    Convierte una imagen en blanco y negro (escala de grises) a un tren de bits.
+    # Redimensionar imagen si es muy grande
+    max_size = (512, 512)
+    image = image.resize(max_size, Image.LANCZOS)
     
-    Args:
-        image (PIL.Image): Imagen en blanco y negro.
-    
-    Returns:
-        numpy array: Tren de bits (0 y 1).
-    """
-    # Convertir la imagen a un array numpy
     array = np.array(image)
-    # Obtener dimensiones de imagen en blanco y negro
-    alto, ancho = array.shape    
+    alto, ancho = array.shape
     
-    # Asegurar que los valores sean de 8 bits
     array = array.astype(np.uint8)
-
-    # Convertir cada valor de 0-255 a 8 bits
     bits = np.unpackbits(array.flatten())
 
     return bits, ancho, alto
 
 def select_modulation():
-    """
-    Permite al usuario elegir el tipo de modulación por teclado.
-    """
-    print("Seleccione el tipo de modulación:")
-    print("1. QPSK")
-    print("2. 16-QAM")
-    print("3. 64-QAM")
-    choice = input("Ingrese el número de la modulación deseada (1, 2, o 3): ").strip()
-    
-    if choice == "1":
-        return "qpsk"
-    elif choice == "2":
-        return "16qam"
-    elif choice == "3":
-        return "64qam"
-    else:
-        print("Opción no válida. Seleccionando QPSK por defecto.")
-        return "qpsk"
+    while True:
+        print("Seleccione el tipo de modulación:")
+        print("1. QPSK")
+        print("2. 16-QAM")
+        print("3. 64-QAM")
+        
+        try:
+            choice = int(input("Ingrese el número de la modulación deseada (1, 2, o 3): "))
+            
+            if choice not in [1, 2, 3]:
+                print("Opción no válida. Intente nuevamente.")
+                continue
+            
+            modulation_map = {1: "qpsk", 2: "16qam", 3: "64qam"}
+            return modulation_map[choice]
+        
+        except ValueError:
+            print("Por favor, ingrese un número válido.")
 
 def get_qam_constellation_mapping(modulation_type):
     if modulation_type == 1:
@@ -209,7 +221,7 @@ def modulate_with_mapping(bits, modulation_type):
     return symbols
     
 def get_bandwidth_and_spacing():
-    """
+    r"""
     Solicita al usuario el ancho de banda y el espaciado entre subportadoras.
 
     Returns:
@@ -230,6 +242,23 @@ def get_snr():
     
     return snr_dB
 
+def get_porcentaje_pilotos():
+    """
+    Solicita al usuario el porcentaje de subportadoras que serán piloto.
+
+    Returns:
+        float: Porcentaje de subportadoras piloto.
+    """
+    while True:
+        try:
+            porcentaje = float(input("Ingrese el porcentaje de subportadoras piloto (ejemplo: 5 para 5%): "))
+            if 0 < porcentaje <= 100:
+                return porcentaje
+            else:
+                print("El porcentaje debe estar entre 0 y 100. Intente nuevamente.")
+        except ValueError:
+            print("Entrada no válida. Ingrese un número.")
+
 def calculate_nc(bw, delta_f):
     """
     Calcula el número de subportadoras activas (N_c) a partir del ancho de banda y el espaciado entre subportadoras.
@@ -241,7 +270,20 @@ def calculate_nc(bw, delta_f):
     Returns:
         int: Número de subportadoras activas (N_c).
     """
-    return bw / delta_f
+        # Validar que los parámetros sean positivos
+    if bw <= 0 or delta_f <= 0:
+        raise ValueError("El ancho de banda y el espaciado deben ser positivos")
+    
+    # Calcular el número de subportadoras
+    nc = int(bw / delta_f)
+    
+    # Asegurar un número mínimo de subportadoras
+    if nc < 10:
+        raise ValueError("El número de subportadoras es demasiado pequeño")
+    
+    return nc  # Redondear hacia abajo
+
+
 
 def OFDM_symbol(QAM_payload, pilotCarriers, dataCarriers, pilotValue, nc):
     """
@@ -255,18 +297,28 @@ def OFDM_symbol(QAM_payload, pilotCarriers, dataCarriers, pilotValue, nc):
     Returns:
         symbol: Vector con las subportadoras OFDM.
     """
-    symbol = np.zeros(nc, dtype=complex)  # Inicializar todas las subportadoras en 0
-    symbol[pilotCarriers] = pilotValue  # Asignar valores a las subportadoras piloto
+    # Filtrar pilotCarriers para que estén dentro del rango de nc
+    valid_pilotCarriers = pilotCarriers[pilotCarriers < nc]
+    
+    # Crear símbolo con ceros
+    symbol = np.zeros(nc, dtype=complex)
+    
+    # Asignar valores a las subportadoras piloto válidas
+    symbol[valid_pilotCarriers] = pilotValue
     
     # Verificar si el tamaño del QAM_payload coincide con las subportadoras de datos
     if len(QAM_payload) < len(dataCarriers):
         # Rellenar con ceros si QAM_payload tiene menos datos
         QAM_payload = np.pad(QAM_payload, (0, len(dataCarriers) - len(QAM_payload)), 'constant', constant_values=0)
     
+    # Filtrar dataCarriers para que estén dentro del rango de nc
+    valid_dataCarriers = dataCarriers[dataCarriers < nc]
+    
     # Asignar los símbolos QAM a las subportadoras de datos
-    symbol[dataCarriers] = QAM_payload[:len(dataCarriers)]  # Cortar si hay datos sobrantes
+    symbol[valid_dataCarriers] = QAM_payload[:len(valid_dataCarriers)]
     
     return symbol
+
 
 
 def IDFT(OFDM_data):
@@ -476,8 +528,8 @@ def monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, data
     Args:
         nc (int): Número de subportadoras activas.
         bitsbn (numpy array): Bits originales de la imagen.
-        ancho (int): Ancho de la imagen.
-        alto (int): Alto de la imagen.
+        H_exact (numpy array): Respuesta exacta del canal.
+        allCarriers (numpy array): Índices de todas las subportadoras.
         pilotCarriers (numpy array): Subportadoras piloto.
         dataCarriers (numpy array): Subportadoras de datos.
         pilotValue (complex): Valor de las subportadoras piloto.
@@ -540,7 +592,15 @@ def monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, data
             rx_bits_array_total = np.concatenate(symbols_esti)
             
             # Comparar con bits originales
+            # Ajustar la longitud de los bits recuperados
             Bits_recuperados = rx_bits_array_total[:len(bitsbn)]
+            
+            # Rellenar con ceros si es necesario
+            if len(Bits_recuperados) < len(bitsbn):
+                Bits_recuperados = np.pad(Bits_recuperados, 
+                                          (0, len(bitsbn) - len(Bits_recuperados)), 
+                                          mode='constant')
+            
             errors = np.sum(bitsbn != Bits_recuperados)
             ber = errors / len(bitsbn)
             ber_results[modulation].append(ber)
@@ -550,18 +610,6 @@ def monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, data
     return ber_results
 
 def distribuir_pilotos_uniformemente(nc, porcentaje_pilotos):
-    """
-    Distribuye uniformemente las subportadoras piloto en el rango total de subportadoras.
-
-    Args:
-        nc (int): Número total de subportadoras (N_c).
-        porcentaje_pilotos (float): Porcentaje de subportadoras que serán piloto (ejemplo: 5.0 para 5%).
-
-    Returns:
-        tuple: (pilotCarriers, dataCarriers)
-            - pilotCarriers: Índices de las subportadoras piloto.
-            - dataCarriers: Índices de las subportadoras de datos.
-    """
     # Convertir porcentaje a proporción
     pilot_ratio = porcentaje_pilotos / 100
 
@@ -576,6 +624,7 @@ def distribuir_pilotos_uniformemente(nc, porcentaje_pilotos):
     dataCarriers = np.delete(allCarriers, pilotCarriers)  # Eliminar las subportadoras piloto
 
     return pilotCarriers, dataCarriers
+
 
 def channel(ofdm_signal, snr_db, noise_prob=0.1):
     """
@@ -709,9 +758,9 @@ def turbo_decoding(encoded_bits):
     
     return turbo_decoded_bits
 
-def apply_dft(symbols):
+def apply_dft_precoding(symbols):
     """
-    Aplica la DFT a los símbolos modulados.
+    Aplica la DFT como precodificación para SC-FDM.
     
     Args:
         symbols (numpy array): Símbolos modulados en el dominio del tiempo.
@@ -735,35 +784,58 @@ def apply_idft(symbols):
 
 def calculate_papr(signal):
     """
-    Calcula el PAPR de una señal.
+    Calcula el Peak-to-Average Power Ratio (PAPR) de una señal.
     
     Args:
         signal (numpy array): Señal en el dominio del tiempo.
     
     Returns:
-        float: Valor del PAPR.
+        float: Valor del PAPR en dB.
     """
     peak_power = np.max(np.abs(signal)**2)
     avg_power = np.mean(np.abs(signal)**2)
     return 10 * np.log10(peak_power / avg_power)
 
-def plot_ccdf(papr_values, label):
+def plot_ccdf_papr(papr_values_ofdm, papr_values_scfdm, modulation):
     """
-    Grafica la CCDF del PAPR.
+    Grafica la Complementary Cumulative Distribution Function (CCDF) del PAPR.
     
     Args:
-        papr_values (list): Lista de valores de PAPR.
+        papr_values_ofdm (list): Valores de PAPR para OFDM.
+        papr_values_scfdm (list): Valores de PAPR para SC-FDM.
+        papr_values (list): Lista de valores de PAPR
+        modulation (str): Tipo de modulación.
         label (str): Etiqueta para la gráfica.
     """
-    papr_values = np.array(papr_values)
-    papr_values.sort()
-    ccdf = 1 - np.arange(1, len(papr_values) + 1) / len(papr_values)
-    plt.semilogy(papr_values, ccdf, label=label)
+    plt.figure(figsize=(10, 6))
+    
+    # Ordenar valores de PAPR
+    papr_scfdm = [calculate_papr(OFDM_time) for OFDM_time in ofdm_IFFT]
+    papr_ofdm = [calculate_papr(OFDM_withCP) for OFDM_withCP in ofdm_cp]
+    papr_values_ofdm = np.sort(papr_values_ofdm)
+    papr_values_scfdm = np.sort(papr_values_scfdm)
+    
+    # Calcular CCDF
+    ccdf_ofdm = 1 - np.arange(1, len(papr_values_ofdm) + 1) / len(papr_values_ofdm)
+    ccdf_scfdm = 1 - np.arange(1, len(papr_values_scfdm) + 1) / len(papr_values_scfdm)
+    
+    plt.figure(figsize=(10, 6))
+    plot_ccdf(papr_ofdm, label="OFDM")
+    plot_ccdf(papr_scfdm, label="SC-FDM")
+    plt.legend()
+    plt.show()
+        
+    # Graficar en escala logarítmica
+    plt.semilogy(papr_values_ofdm, ccdf_ofdm, label='OFDM', marker='o')
+    plt.semilogy(papr_values_scfdm, ccdf_scfdm, label='SC-FDM', marker='x')
+    
+    plt.title(f'CCDF de PAPR - {modulation.upper()}')
     plt.xlabel('PAPR (dB)')
     plt.ylabel('CCDF')
-    plt.title('CCDF del PAPR')
-    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+    plt.grid(True, which='both', linestyle='--')
     plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 def maximum_ratio_combining(signals, snr_values):
     """
@@ -865,7 +937,38 @@ def main():
     turbo_encoded_bits = turbo_encoding(encoded_bits)
     
     # Solicitar tipo de modulación qpsk, 16qam, 64qam
-    modulation_type = select_modulation() # se obtiene "qpsk", "16qam" o "64qam"
+    modulation_type = select_modulation()  # Se obtiene "qpsk", "16qam" o "64qam"
+    
+    # Solicitar ancho de banda y espaciado entre subportadoras
+    bw, delta_f = get_bandwidth_and_spacing()
+    
+    # Calcular el número de subportadoras activas (N_c)
+    nc = calculate_nc(bw, delta_f)
+    print(f"Número de subportadoras activas (N_c): {nc}")
+    
+    # Crear array de los carriers
+    allCarriers = np.arange(nc)
+    
+    # Solicitar el porcentaje de subportadoras piloto
+    porcentaje_pilotos = get_porcentaje_pilotos()
+    
+    # Distribuir uniformemente las subportadoras piloto
+    pilotCarriers, dataCarriers = distribuir_pilotos_uniformemente(nc, porcentaje_pilotos)
+    
+    # Solicitar longitud del prefijo cíclico (CP)
+    CP = int(get_longitud_CP())
+    
+    # Solicitar valor de SNR en dB
+    SNRdb = get_snr()
+    
+    # Calcular el tamaño de la IFFT
+    n = calculate_ifft_size(nc)
+        
+    # Definir otras variables necesarias
+    pilotValue = 1 + 1j  # Valor de las subportadoras piloto
+    n = 64  # Tamaño de la IFFT
+    H_exact = np.ones(nc, dtype=complex)  # Respuesta exacta del canal (simulada)
+    channelResponse = np.array([1, 0, 0.3 + 0.3j])  # Respuesta del canal
     
     # Realiza Modulación QPSK, 16-QAM o 64-QAM
     symbols = modulate_with_mapping(turbo_encoded_bits, modulation_type)
@@ -875,19 +978,8 @@ def main():
     
     print(f"Primeros 10 símbolos que entraran a mod OFDM: {symbols[:10]}")
     
-    # Definir parámetros OFDM (corregido)
-    nc = 64  # Número de subportadoras
-    pilotCarriers = [0, 16, 32, 48]  # Subportadoras piloto
-    dataCarriers = np.delete(np.arange(nc), pilotCarriers)  # Subportadoras de datos
-    pilotValue = 1 + 1j  # Valor de las subportadoras piloto
-    n = 64  # Tamaño de la IFFT
-    CP = 16  # Longitud del prefijo cíclico
-    SNRdb = 20  # SNR en dB
-    H_exact = np.ones(nc, dtype=complex)  # Respuesta exacta del canal (simulada)
-    channelResponse = np.array([1, 0, 0.3 + 0.3j])  # Respuesta del canal
-    
     # Aplicar DFT a los símbolos modulados (SC-FDM)
-    symbols_freq = apply_dft(symbols)
+    symbols_freq = apply_dft_precoding(symbols)
     
     # Dividir los símbolos modulados en bloques según el número de subportadoras de datos
     grupos_resultantes = Serie_paralelo(symbols_freq, abs(nc - len(pilotCarriers)))
@@ -1028,6 +1120,9 @@ def main():
     print(f"bits erroneos: {errors}")
     print(f"BER: {ber}")
 
+    # Plotting (modified to include SC-FDM constellation)
+    plt.figure(figsize=(15, 6))
+    
     # Configuración de la simulación
     modulation_types = ["qpsk", "16qam", "64qam"]
     SNR_range = range(0, 60, 5)  # De 0 a 30 dB

@@ -1,0 +1,109 @@
+~# Archivos y directorios que se ignoran
+
+# Archivos de configuración
+*.venv
+*.env
+*.config
+
+# Archivos de compilación y ejecución
+*.exe
+*.o
+*.obj
+*.dll
+*.so
+*.a
+*.lib
+
+# Archivos de depuración
+*.pdb
+*.dbg
+
+# Archivos de logs
+*.log
+*.out
+*.err
+
+# Archivos de caché
+*.cache
+*.tmp
+
+# Archivos de IDE y editores de texto
+*.idea/
+*.vscode/
+*.sublime-text/
+*.atom/
+*.brackets/
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de Node.js
+node_modules/
+package-lock.json
+
+# Archivos de Python
+__pycache__/
+*.pyc
+
+# Archivos de Java
+*.class
+*.jar
+
+# Archivos de Ruby
+*.rb
+*.gem
+
+# Archivos de PHP
+*.php
+*.phar
+
+# Archivos de Go
+*.go
+*.gocache
+
+# Archivos de Rust
+*.rs
+*.rustc
+
+# Archivos de Swift
+*.swift
+*.swiftmodule
+
+# Archivos de Kotlin
+*.kt
+*.kotlin
+
+# Archivos de TypeScript
+*.ts
+*.d.ts
+
+# Archivos de JavaScript
+*.js
+*.jsx
+
+# Archivos de CSS y Sass
+*.css
+*.scss
+*.sass
+
+# Archivos de imágenes y multimedia
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.ico
+*.mp3
+*.mp4
+*.avi
+*.mov
+
+# Archivos de documentos y texto
+*.doc
+*.docx
+*.pdf
+*.txt
+*.md
+*.markdown
+
