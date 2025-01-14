@@ -551,7 +551,7 @@ def monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, data
                 OFDM_withCP = addCP(OFDM_time, CP)
                 OFDM_TX = OFDM_withCP
                 
-                noise_prob = 0.1
+                noise_prob = 0.1  # Puedes ajustar este valor según sea necesario
                 OFDM_RX = channel(OFDM_TX, SNRdb, noise_prob)
                 ofdm_canal.append(OFDM_RX)  # Almacenar el resultado del canal
                 
@@ -804,46 +804,97 @@ def plot_ccdf(papr_values, label):
 
 def maximum_ratio_combining(signals, snr_values):
     """
-    Combina las señales recibidas en múltiples antenas usando Maximum-Ratio Combining (MRC).
+    Implementa Maximum Ratio Combining (MRC) para múltiples señales recibidas.
     
     Args:
-        signals (list): Lista de señales recibidas en cada antena.
-        snr_values (list): Lista de valores de SNR para cada antena.
+        signals (list): Lista de señales recibidas de cada antena
+        snr_values (list): Lista de valores SNR para cada antena
     
     Returns:
-        numpy array: Señal combinada usando MRC.
+        numpy.array: Señal combinada usando MRC
     """
-    # Calcular los pesos de MRC basados en el SNR
-    weights = np.sqrt(snr_values)
-    weights /= np.sum(weights)  # Normalizar los pesos
+    # Convertir SNR de dB a lineal
+    weights = [10**(snr/10) for snr in snr_values]
     
-    # Combinar las señales usando los pesos
-    combined_signal = np.zeros_like(signals[0])
-    for signal, weight in zip(signals, weights):
-        combined_signal += signal * weight
+    # Normalizar pesos
+    weights = np.array(weights) / np.sum(weights)
     
-    return combined_signal
-
-def process_signals_with_diversity(ofdm_canal, snr_values, num_antennas):
-    """
-    Procesa las señales recibidas en múltiples antenas usando diversidad.
-    
-    Args:
-        ofdm_canal (list): Lista de señales OFDM recibidas en cada antena.
-        snr_values (list): Lista de valores de SNR para cada antena.
-        num_antennas (int): Número de antenas a utilizar (2, 4, 8).
-    
-    Returns:
-        numpy array: Señal combinada usando MRC.
-    """
-    # Seleccionar las señales de las antenas correspondientes
-    signals = ofdm_canal[:num_antennas]
-    snr = snr_values[:num_antennas]
+    # Inicializar señal combinada
+    combined_signal = np.zeros_like(signals[0], dtype=complex)
     
     # Aplicar MRC
-    combined_signal = maximum_ratio_combining(signals, snr)
-    
+    for signal, weight in zip(signals, weights):
+        combined_signal += weight * signal
+        
     return combined_signal
+
+def simulate_multiple_rx_antennas(symbols, nc, pilotCarriers, dataCarriers, pilotValue, n, CP, SNRdb, num_antennas=4):
+    """
+    Simula la recepción con múltiples antenas.
+    
+    Args:
+        symbols: Símbolos modulados
+        num_antennas: Número de antenas receptoras
+    Returns:
+        list: Señales recibidas en cada antena
+    """
+    ofdm_signals = []
+    for _ in range(num_antennas):
+        antenna_signals = []
+        grupos_resultantes = Serie_paralelo(symbols, abs(nc - len(pilotCarriers)))
+        
+        for grupo in grupos_resultantes:
+            OFDM_data = OFDM_symbol(grupo, pilotCarriers, dataCarriers, pilotValue, n)
+            OFDM_time = IDFT(OFDM_data)
+            OFDM_withCP = addCP(OFDM_time, CP)
+            # Agregar ruido independiente para cada antena
+            noise_prob = 0.1 + np.random.uniform(-0.02, 0.02)
+            OFDM_RX = channel(OFDM_withCP, SNRdb, noise_prob)
+            antenna_signals.append(OFDM_RX)
+            
+        ofdm_signals.append(antenna_signals)
+    return ofdm_signals
+
+def process_rx_diversity(ofdm_signals, nc, pilotCarriers, dataCarriers, pilotValue, n, CP, H_exact, demapping_table, allCarriers):
+    """
+    Procesa las señales recibidas usando diversidad MRC.
+    
+    Args:
+        ofdm_signals: Señales recibidas de todas las antenas
+        ... (otros parámetros necesarios)
+    Returns:
+        tuple: (bits recuperados, símbolos QAM estimados, decisiones duras)
+    """
+    num_antennas = len(ofdm_signals)
+    combined_symbols = []
+    
+    # Combinar señales de cada símbolo OFDM
+    for symbol_idx in range(len(ofdm_signals[0])):
+        current_symbols = [ant_signals[symbol_idx] for ant_signals in ofdm_signals]
+        snr_values = [10 + np.random.uniform(-1, 1) for _ in range(num_antennas)]
+        combined_signal = maximum_ratio_combining(current_symbols, snr_values)
+        combined_symbols.append(combined_signal)
+    
+    # Procesar símbolos combinados
+    symbols_esti = []
+    all_QAM_est = []
+    all_hardDecision = []
+    
+    for combined_signal in combined_symbols:
+        OFDM_RX_noCP = removeCP(combined_signal, CP, n)
+        OFDM_demod = DFT(OFDM_RX_noCP)
+        OFDM_demod_datos = OFDM_demod[:nc]
+        Hest_at_pilots, Hest = channelEstimate(OFDM_demod_datos, pilotCarriers, pilotValue, allCarriers, H_exact)
+        equalized_Hest = equalize(OFDM_demod_datos, Hest)
+        QAM_est = get_payload(equalized_Hest, dataCarriers)
+        PS_est, hardDecision = Demapping(QAM_est, demapping_table)
+        
+        symbols_esti.append(PS_est.flatten())
+        all_QAM_est.extend(QAM_est)
+        all_hardDecision.extend(hardDecision)
+    
+    rx_bits = np.concatenate(symbols_esti)
+    return rx_bits, np.array(all_QAM_est), np.array(all_hardDecision)
 
 def reconstruct_image_with_diversity(bits_recuperados, ancho, alto):
     """
@@ -903,8 +954,48 @@ def main():
     
     # Solicitar tipo de modulación qpsk, 16qam, 64qam
     modulation_type = select_modulation() # se obtiene "qpsk", "16qam" o "64qam"
+
+    # Solicitar ancho de banda y espaciado entre subportadoras
+    bw, delta_f = get_bandwidth_and_spacing()
+
+    # Calcular el número de subportadoras activas
+    nc = calculate_nc(bw, delta_f)
+
+    # Distribuir subportadoras piloto y de datos
+    pilotCarriers, dataCarriers = distribuir_pilotos_uniformemente(nc, porcentaje_pilotos=5.0)
     
+
+    # Valor de las subportadoras piloto
+    pilotValue = 1 + 1j
+    
+    # Calcular el tamaño de la IFFT
+    n = calculate_ifft_size(nc)
+    
+    # Solicitar la longitud del prefijo cíclico
+    CP = get_longitud_CP()
+    
+    # Solicitar el valor de SNR en dB
+    SNRdb = get_snr()
+
+    # Respuesta exacta del canal
+    H_exact = np.array([1, 0, 0.3 + 0.3j])
+    
+    # Tabla de mapeo inverso para la demodulación
+    modulation_type = select_modulation()
+    if modulation_type == "qpsk":
+        demapping_table = {v: k for k, v in get_qam_constellation_mapping(1).items()}
+    elif modulation_type == "16qam":
+        demapping_table = {v: k for k, v in get_qam_constellation_mapping(2).items()}
+    elif modulation_type == "64qam":
+        demapping_table = {v: k for k, v in get_qam_constellation_mapping(3).items()}
+
+    # Índices de todas las subportadoras
+    allCarriers = np.arange(nc)
+    
+    # Respuesta del canal
+    channelResponse = np.array([1, 0, 0.3 + 0.3j])
     # Realiza Modulación QPSK, 16-QAM o 64-QAM
+
     symbols = modulate_with_mapping(turbo_encoded_bits, modulation_type)
     
     # Aplicar SFBC para diversidad en TX con 2 antenas
@@ -924,6 +1015,8 @@ def main():
         OFDM_data = OFDM_symbol(grupo, pilotCarriers, dataCarriers, pilotValue, n)
         OFDM_time = IDFT(OFDM_data)
         OFDM_withCP = addCP(OFDM_time, CP)
+        # Definir noise_prob antes de llamar a channel
+        noise_prob = 0.1  # Puedes ajustar este valor según sea necesario
         OFDM_RX = channel(OFDM_withCP, SNRdb, noise_prob)
         ofdm_canal_ant1.append(OFDM_RX)
     
@@ -933,6 +1026,8 @@ def main():
         OFDM_data = OFDM_symbol(grupo, pilotCarriers, dataCarriers, pilotValue, n)
         OFDM_time = IDFT(OFDM_data)
         OFDM_withCP = addCP(OFDM_time, CP)
+        # Definir noise_prob antes de llamar a channel
+        noise_prob = 0.1  # Puedes ajustar este valor según sea necesario
         OFDM_RX = channel(OFDM_withCP, SNRdb, noise_prob)
         ofdm_canal_ant2.append(OFDM_RX)
     

@@ -208,6 +208,41 @@ def modulate_with_mapping(bits, modulation_type):
     
     return symbols
 
+def calculate_beamforming_weights(num_antennas, direction):
+    """
+    Calcula los pesos de beamforming para un número dado de antenas y una dirección.
+    
+    Args:
+        num_antennas (int): Número de antenas.
+        direction (float): Ángulo de dirección en radianes.
+    
+    Returns:
+        numpy array: Pesos de beamforming.
+    """
+    # Espaciado entre antenas (en longitudes de onda)
+    antenna_spacing = 0.5  # Media longitud de onda
+    
+    # Calcular los pesos de beamforming
+    weights = np.exp(-1j * 2 * np.pi * antenna_spacing * np.arange(num_antennas) * np.sin(direction))
+    
+    # Normalizar los pesos
+    weights /= np.linalg.norm(weights)
+    
+    return weights
+
+def apply_beamforming(signals, weights):
+    """
+    Aplica beamforming a las señales transmitidas.
+    
+    Args:
+        signals (numpy array): Señales transmitidas desde cada antena.
+        weights (numpy array): Pesos de beamforming.
+    
+    Returns:
+        numpy array: Señales con beamforming aplicado.
+    """
+    return signals * weights.reshape(-1, 1)
+
 def apply_mimo(symbols, num_tx_antennas, num_rx_antennas):
     """
     Aplica multiplexación espacial MIMO para transmitir flujos de datos en paralelo.
@@ -287,9 +322,12 @@ def OFDM_symbol(QAM_payload, pilotCarriers, dataCarriers, pilotValue, nc):
     if len(QAM_payload) < len(dataCarriers):
         # Rellenar con ceros si QAM_payload tiene menos datos
         QAM_payload = np.pad(QAM_payload, (0, len(dataCarriers) - len(QAM_payload)), 'constant', constant_values=0)
+    elif len(QAM_payload) > len(dataCarriers):
+        # Truncar si QAM_payload tiene más datos
+        QAM_payload = QAM_payload[:len(dataCarriers)]
     
     # Asignar los símbolos QAM a las subportadoras de datos
-    symbol[dataCarriers] = QAM_payload[:len(dataCarriers)]  # Cortar si hay datos sobrantes
+    symbol[dataCarriers] = QAM_payload
     
     return symbol
 
@@ -863,6 +901,28 @@ def plot_ber_vs_snr(ber_results, snr_range):
     plt.legend()
     plt.show()
 
+def plot_ber_vs_snr_comparison(ber_results_simple, ber_results_diversity, ber_results_beamforming, snr_range):
+    """
+    Grafica el BER vs SNR para OFDM simple, OFDM con diversidad en RX y OFDM con diversidad en TX y beamforming.
+    
+    Args:
+        ber_results_simple (dict): Resultados de BER para OFDM simple.
+        ber_results_diversity (dict): Resultados de BER para OFDM con diversidad en RX.
+        ber_results_beamforming (dict): Resultados de BER para OFDM con diversidad en TX y beamforming.
+        snr_range (list): Rango de valores de SNR.
+    """
+    plt.figure(figsize=(10, 6))
+    plt.semilogy(snr_range, ber_results_simple, label='OFDM Simple')
+    plt.semilogy(snr_range, ber_results_diversity, label='OFDM con Diversidad en RX')
+    plt.semilogy(snr_range, ber_results_beamforming, label='OFDM con Diversidad en TX y Beamforming')
+    
+    plt.xlabel('SNR (dB)')
+    plt.ylabel('BER')
+    plt.title('Comparación de BER vs SNR')
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+    plt.legend()
+    plt.show()
+
 def main():
     # Ruta de la imagen
     image_path = "pluto.jpg"
@@ -886,7 +946,22 @@ def main():
     turbo_encoded_bits = turbo_encoding(encoded_bits)
     
     # Solicitar tipo de modulación qpsk, 16qam, 64qam
-    modulation_type = select_modulation() # se obtiene "qpsk", "16qam" o "64qam"
+    modulation_type = select_modulation()  # se obtiene "qpsk", "16qam" o "64qam"
+    
+    # Obtener la tabla de mapeo para la modulación seleccionada
+    if modulation_type == "qpsk":
+        modulation_index = 1
+    elif modulation_type == "16qam":
+        modulation_index = 2
+    elif modulation_type == "64qam":
+        modulation_index = 3
+    else:
+        raise ValueError("Tipo de modulación no soportado.")
+    
+    constellation_mapping = get_qam_constellation_mapping(modulation_index)
+    
+    # Crear la tabla de demapeo a partir de la tabla de mapeo
+    demapping_table = {v: k for k, v in constellation_mapping.items()}
     
     # Realiza Modulación QPSK, 16-QAM o 64-QAM
     symbols = modulate_with_mapping(turbo_encoded_bits, modulation_type)
@@ -896,22 +971,70 @@ def main():
     num_rx_antennas = 2
     mimo_symbols = apply_mimo(symbols, num_tx_antennas, num_rx_antennas)
     
-    # Procesar símbolos para cada antena
+    # Calcular pesos de beamforming
+    direction = np.pi / 4  # Dirección del receptor (45 grados)
+    beamforming_weights = calculate_beamforming_weights(num_tx_antennas, direction)
+    
+    # Aplicar beamforming a las señales transmitidas
+    mimo_symbols_beamformed = apply_beamforming(mimo_symbols, beamforming_weights)
+    
+    # Obtener ancho de banda y espaciado entre subportadoras
+    bw, delta_f = get_bandwidth_and_spacing()
+    
+    # Calcular el número de subportadoras activas
+    nc = calculate_nc(bw, delta_f)
+    
+    # Calcular el tamaño de la IFFT
+    n = calculate_ifft_size(nc)
+    
+    # Obtener la longitud del prefijo cíclico
+    CP = get_longitud_CP()
+    
+    # Índices de todas las subportadoras
+    allCarriers = np.arange(nc)
+
+    # Obtener el valor de SNR
+    SNRdb = get_snr()
+    
+    # Distribuir subportadoras piloto y datos
+    pilotCarriers, dataCarriers = distribuir_pilotos_uniformemente(nc, 5.0)  # 5% de subportadoras piloto
+    pilotValue = 1 + 1j  # Valor de los pilotos
+
+    # Respuesta del canal (simulada)
+    channelResponse = np.array([1, 0, 0.3 + 0.3j])  # Respuesta impulsiva del canal
+    H_exact = np.fft.fft(channelResponse, n)  # Respuesta del canal en el dominio de la frecuencia
+
+    # Procesar símbolos para cada antena (sin beamforming)
     ofdm_canal = []
     for i in range(num_tx_antennas):
         OFDM_data = OFDM_symbol(mimo_symbols[i], pilotCarriers, dataCarriers, pilotValue, n)
         OFDM_time = IDFT(OFDM_data)
         OFDM_withCP = addCP(OFDM_time, CP)
-        OFDM_RX = channel(OFDM_withCP, SNRdb, noise_prob)
+        OFDM_RX = channel(OFDM_withCP, SNRdb, noise_prob=0.1)
         ofdm_canal.append(OFDM_RX)
     
-    # Combinar las señales recibidas desde ambas antenas
+    # Procesar símbolos para cada antena (con beamforming)
+    ofdm_canal_beamformed = []
+    for i in range(num_tx_antennas):
+        OFDM_data = OFDM_symbol(mimo_symbols_beamformed[i], pilotCarriers, dataCarriers, pilotValue, n)
+        OFDM_time = IDFT(OFDM_data)
+        OFDM_withCP = addCP(OFDM_time, CP)
+        OFDM_RX = channel(OFDM_withCP, SNRdb, noise_prob=0.1)
+        ofdm_canal_beamformed.append(OFDM_RX)
+    
+    # Combinar las señales recibidas desde ambas antenas (sin beamforming)
     combined_signals = []
     for rx_ant1, rx_ant2 in zip(ofdm_canal[:num_rx_antennas], ofdm_canal[num_rx_antennas:]):
         combined_signal = maximum_ratio_combining([rx_ant1, rx_ant2], [SNRdb, SNRdb])
         combined_signals.append(combined_signal)
     
-    # DECODIFICACIÓN OFDM con señales combinadas
+    # Combinar las señales recibidas desde ambas antenas (con beamforming)
+    combined_signals_beamformed = []
+    for rx_ant1, rx_ant2 in zip(ofdm_canal_beamformed[:num_rx_antennas], ofdm_canal_beamformed[num_rx_antennas:]):
+        combined_signal = maximum_ratio_combining([rx_ant1, rx_ant2], [SNRdb, SNRdb])
+        combined_signals_beamformed.append(combined_signal)
+    
+    # DECODIFICACIÓN OFDM con señales combinadas (sin beamforming)
     symbols_esti = []
     all_QAM_est = []
     all_hardDecision = []
@@ -927,37 +1050,52 @@ def main():
         rx_bits_array = PS_est.flatten()
         symbols_esti.append(rx_bits_array)
     
-    # Agrupación de los bloques de bits
+    # DECODIFICACIÓN OFDM con señales combinadas (con beamforming)
+    symbols_esti_beamformed = []
+    all_QAM_est_beamformed = []
+    all_hardDecision_beamformed = []
+    
+    for grupo_rx in combined_signals_beamformed:
+        OFDM_RX_noCP = removeCP(grupo_rx, CP, n)
+        OFDM_demod = DFT(OFDM_RX_noCP)
+        OFDM_demod_datos = OFDM_demod[:nc]
+        Hest_at_pilots, Hest = channelEstimate(OFDM_demod_datos, pilotCarriers, pilotValue, allCarriers, H_exact)
+        equalized_Hest = equalize(OFDM_demod_datos, Hest)
+        QAM_est = get_payload(equalized_Hest, dataCarriers)
+        PS_est, hardDecision = Demapping(QAM_est, demapping_table)
+        rx_bits_array = PS_est.flatten()
+        symbols_esti_beamformed.append(rx_bits_array)
+    
+    # Agrupación de los bloques de bits (sin beamforming)
     rx_bits_array_total = np.concatenate(symbols_esti)
+    
+    # Agrupación de los bloques de bits (con beamforming)
+    rx_bits_array_total_beamformed = np.concatenate(symbols_esti_beamformed)
     
     # Aplicar decodificación Turbo (opcional)
     turbo_decoded_bits = turbo_decoding(rx_bits_array_total)
+    turbo_decoded_bits_beamformed = turbo_decoding(rx_bits_array_total_beamformed)
     
     # Aplicar decodificación convolucional
     decoded_bits = convolutional_decoding(turbo_decoded_bits)
+    decoded_bits_beamformed = convolutional_decoding(turbo_decoded_bits_beamformed)
     
-    Bits_recuperados = decoded_bits[:len(bitsbn)]
+    # Reconstruir imágenes
+    reconstructed_image, bitsrec = reconstruct_image_from_bits(decoded_bits, ancho, alto)
+    reconstructed_image_beamformed, bitsrec_beamformed = reconstruct_image_from_bits(decoded_bits_beamformed, ancho, alto)
     
-    # Validar resultados
-    print(f"Número total de bits recuperados: {len(rx_bits_array_total)}")
-    print(f"Número de bits útiles recuperados: {len(Bits_recuperados)}")
-
-    reconstructed_image, bitsrec = reconstruct_image_from_bits(Bits_recuperados, ancho, alto)
-        
-    #Calculo del BER
-    errors = np.sum(bitsbn != bitsrec)
-    total_bits = len(bitsbn)
-    ber = errors / total_bits
-    print(f"bits erroneos: {errors}")
-    print(f"BER: {ber}")
-
     # Configuración de la simulación
     modulation_types = ["qpsk", "16qam", "64qam"]
     SNR_range = range(0, 60, 5)  # De 0 a 30 dB
 
-    # # Simulación Monte Carlo
+    # Simulación Monte Carlo
     ber_results = monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, dataCarriers, pilotValue, n, modulation_types, SNR_range, channelResponse, CP)
 
+    # Simulación Monte Carlo para OFDM con diversidad en TX y beamforming
+    ber_results_beamforming = monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, dataCarriers, pilotValue, n, modulation_types, SNR_range, channelResponse, CP)
+    
+    # Graficar comparación de BER vs SNR
+    plot_ber_vs_snr_comparison(ber_results["qpsk"], ber_results["16qam"], ber_results["64qam"], SNR_range)
 
     # Crear una figura para contener todo
     fig = plt.figure(figsize=(15, 6))  # Ajusta el tamaño de la ventana
@@ -1003,7 +1141,6 @@ def main():
     ax5.set_ylabel("Eje Imaginario")
     ax5.grid(True, linestyle="--", alpha=0.7)
 
-
     # Subplot 6: BER vs SNR
     ax6 = fig.add_subplot(2, 3, 6)  # 2 filas, 3 columnas, posición 6
     for modulation, ber_values in ber_results.items():
@@ -1014,13 +1151,11 @@ def main():
     ax6.grid(True, which="both", linestyle="--", linewidth=0.5)
     ax6.legend()
     
-    
     # Ajustar el diseño para evitar superposiciones
     plt.tight_layout()
 
     # Mostrar la figura
     plt.show()
-
 
 if __name__ == "__main__":
     main()

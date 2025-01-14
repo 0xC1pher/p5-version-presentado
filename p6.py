@@ -376,47 +376,27 @@ def DFT(OFDM_RX):
 def channelEstimate(OFDM_demod, pilotCarriers, pilotValue, allCarriers, H_exact):
     """
     Estima la respuesta del canal usando las subportadoras piloto.
-
-    Args:
-        OFDM_demod (numpy array): Símbolo OFDM en el dominio de la frecuencia.
-        pilotCarriers (numpy array): Índices de las subportadoras piloto.
-        pilotValue (complex): Valor transmitido en las subportadoras piloto.
-        allCarriers (numpy array): Índices de todas las subportadoras.
-        H_exact (numpy array): Canal exacto calculado.
-
-    Returns:
-        tuple: Estimación del canal en las subportadoras piloto y en todas las subportadoras.
     """
-
-    # Filtrar índices de subportadoras piloto que estén dentro del rango
     pilotCarriers = pilotCarriers[pilotCarriers < len(OFDM_demod)]
-    
-    # Valores recibidos en las subportadoras piloto
     pilots = OFDM_demod[pilotCarriers]
-    
-    # Estimar la respuesta del canal en las subportadoras piloto
     Hest_at_pilots = pilots / pilotValue
     
-    # Interpolar para estimar el canal en todas las subportadoras
-    Hest_abs = interp1d(pilotCarriers, np.abs(Hest_at_pilots), kind='linear', fill_value="extrapolate")(np.arange(len(OFDM_demod)))
-    Hest_phase = interp1d(pilotCarriers, np.angle(Hest_at_pilots), kind='linear', fill_value="extrapolate")(np.arange(len(OFDM_demod)))
+    # Mejorar la interpolación usando un método más robusto
+    Hest_abs = interp1d(pilotCarriers, np.abs(Hest_at_pilots), kind='cubic', fill_value="extrapolate")(allCarriers)
+    Hest_phase = interp1d(pilotCarriers, np.angle(Hest_at_pilots), kind='cubic', fill_value="extrapolate")(allCarriers)
     Hest = Hest_abs * np.exp(1j * Hest_phase)
     
     return Hest_at_pilots, Hest
 
-
 def equalize(OFDM_demod, Hest):
     """
     Corrige las subportadoras activas usando la estimación del canal.
-
-    Args:
-        OFDM_demod (numpy array): Símbolo OFDM en el dominio de la frecuencia.
-        Hest (numpy array): Estimación del canal.
-
-    Returns:
-        numpy array: Subportadoras activas corregidas.
     """
+    # Aplicar un filtro adicional para reducir el ruido
+    Hest_magnitude = np.abs(Hest)
+    Hest_magnitude[Hest_magnitude < 0.1] = 0.1  # Evitar divisiones por valores muy pequeños
     return OFDM_demod / Hest
+
 
 def get_payload(equalized, dataCarriers):
     """
@@ -522,23 +502,6 @@ def reconstruct_image_from_bits(bits, width, height):
 def monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, dataCarriers, pilotValue, n, modulation_types, SNR_range, channelResponse, CP):
     """
     Realiza una simulación Monte Carlo para calcular el BER de diferentes modulaciones y valores de SNR.
-    
-    Args:
-        nc (int): Número de subportadoras activas.
-        bitsbn (numpy array): Bits originales de la imagen.
-        H_exact (numpy array): Respuesta exacta del canal.
-        allCarriers (numpy array): Índices de todas las subportadoras.
-        pilotCarriers (numpy array): Subportadoras piloto.
-        dataCarriers (numpy array): Subportadoras de datos.
-        pilotValue (complex): Valor de las subportadoras piloto.
-        n (int): Tamaño de la IFFT.
-        modulation_types (list): Tipos de modulación ("qpsk", "16qam", "64qam").
-        SNR_range (list): Valores de SNR a simular (en dB).
-        channelResponse (numpy array): Respuesta del canal.
-        CP (int): Longitud del prefijo cíclico.
-
-    Returns:
-        dict: BER para cada modulación y SNR.
     """
     ber_results = {mod: [] for mod in modulation_types}
 
@@ -547,17 +510,13 @@ def monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, data
         constellation_mapping = get_qam_constellation_mapping({"qpsk": 1, "16qam": 2, "64qam": 3}[modulation])
         demapping_table = {v: k for k, v in constellation_mapping.items()}
 
-        # Precalcular símbolos y OFDM
         symbols = modulate_with_mapping(bitsbn, modulation)
         grupos_resultantes = Serie_paralelo(symbols, abs(nc - len(pilotCarriers)))
 
         for SNRdb in SNR_range:
             print(f"SNR: {SNRdb} dB")
             
-            # Generar señal OFDM
             ofdm_canal = []
-            ofdm_signal = []  # Para calcular PAPR
-
             for grupo in grupos_resultantes:
                 OFDM_data = OFDM_symbol(grupo, pilotCarriers, dataCarriers, pilotValue, n)
                 OFDM_time = IDFT(OFDM_data)
@@ -566,11 +525,8 @@ def monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, data
                 
                 noise_prob = 0.1
                 OFDM_RX = channel(OFDM_TX, SNRdb, noise_prob)
-                ofdm_canal.append(OFDM_RX)  # Almacenar el resultado del canal
-                
-                ofdm_signal.append(OFDM_withCP)
+                ofdm_canal.append(OFDM_RX)
 
-            # Decodificar
             rx_bits_array_total = []
             symbols_esti = []
             
@@ -582,22 +538,11 @@ def monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, data
                 equalized_Hest = equalize(OFDM_demod_datos, Hest)
                 QAM_est = get_payload(equalized_Hest, dataCarriers)
                 PS_est, hardDecision = Demapping(QAM_est, demapping_table)
-                # Bits recuperados
                 rx_bits_array = PS_est.flatten()
                 symbols_esti.append(rx_bits_array)
 
-            # Agrupación de los bloques de bits
             rx_bits_array_total = np.concatenate(symbols_esti)
-            
-            # Comparar con bits originales
-            # Ajustar la longitud de los bits recuperados
             Bits_recuperados = rx_bits_array_total[:len(bitsbn)]
-            
-            # Rellenar con ceros si es necesario
-            if len(Bits_recuperados) < len(bitsbn):
-                Bits_recuperados = np.pad(Bits_recuperados, 
-                                          (0, len(bitsbn) - len(Bits_recuperados)), 
-                                          mode='constant')
             
             errors = np.sum(bitsbn != Bits_recuperados)
             ber = errors / len(bitsbn)
@@ -872,19 +817,15 @@ def reconstruct_image_with_diversity(bits_recuperados, ancho, alto):
 
 def plot_ber_vs_snr(ber_results, snr_range):
     """
-    Grafica el BER vs SNR para cada antena en una misma gráfica.
-    
-    Args:
-        ber_results (dict): Diccionario con los resultados de BER para cada antena.
-        snr_range (list): Rango de valores de SNR.
+    Grafica el BER vs SNR para cada modulación.
     """
     plt.figure(figsize=(10, 6))
-    for antenna, ber_values in ber_results.items():
-        plt.semilogy(snr_range, ber_values, label=f'Antena {antenna}')
+    for modulation, ber_values in ber_results.items():
+        plt.semilogy(snr_range, ber_values, label=f'{modulation.upper()}')
     
     plt.xlabel('SNR (dB)')
     plt.ylabel('BER')
-    plt.title('BER vs SNR para Cada Antena')
+    plt.title('BER vs SNR para Diferentes Modulaciones')
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
     plt.legend()
     plt.show()

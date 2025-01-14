@@ -770,17 +770,18 @@ def apply_dft_precoding(symbols):
     """
     return np.fft.fft(symbols)
 
-def apply_idft(symbols):
+def apply_dft(symbols):
     """
-    Aplica la IDFT a los símbolos recibidos.
+    Aplica la DFT a los símbolos modulados.
     
     Args:
-        symbols (numpy array): Símbolos en el dominio de la frecuencia.
+        symbols (numpy array): Símbolos modulados en el dominio del tiempo.
     
     Returns:
-        numpy array: Símbolos en el dominio del tiempo.
+        numpy array: Símbolos en el dominio de la frecuencia.
     """
-    return np.fft.ifft(symbols)
+    return np.fft.fft(symbols)
+
 
 def calculate_papr(signal):
     """
@@ -803,15 +804,11 @@ def plot_ccdf_papr(papr_values_ofdm, papr_values_scfdm, modulation):
     Args:
         papr_values_ofdm (list): Valores de PAPR para OFDM.
         papr_values_scfdm (list): Valores de PAPR para SC-FDM.
-        papr_values (list): Lista de valores de PAPR
         modulation (str): Tipo de modulación.
-        label (str): Etiqueta para la gráfica.
     """
     plt.figure(figsize=(10, 6))
     
     # Ordenar valores de PAPR
-    papr_scfdm = [calculate_papr(OFDM_time) for OFDM_time in ofdm_IFFT]
-    papr_ofdm = [calculate_papr(OFDM_withCP) for OFDM_withCP in ofdm_cp]
     papr_values_ofdm = np.sort(papr_values_ofdm)
     papr_values_scfdm = np.sort(papr_values_scfdm)
     
@@ -819,12 +816,6 @@ def plot_ccdf_papr(papr_values_ofdm, papr_values_scfdm, modulation):
     ccdf_ofdm = 1 - np.arange(1, len(papr_values_ofdm) + 1) / len(papr_values_ofdm)
     ccdf_scfdm = 1 - np.arange(1, len(papr_values_scfdm) + 1) / len(papr_values_scfdm)
     
-    plt.figure(figsize=(10, 6))
-    plot_ccdf(papr_ofdm, label="OFDM")
-    plot_ccdf(papr_scfdm, label="SC-FDM")
-    plt.legend()
-    plt.show()
-        
     # Graficar en escala logarítmica
     plt.semilogy(papr_values_ofdm, ccdf_ofdm, label='OFDM', marker='o')
     plt.semilogy(papr_values_scfdm, ccdf_scfdm, label='SC-FDM', marker='x')
@@ -836,6 +827,7 @@ def plot_ccdf_papr(papr_values_ofdm, papr_values_scfdm, modulation):
     plt.legend()
     plt.tight_layout()
     plt.show()
+
 
 def maximum_ratio_combining(signals, snr_values):
     """
@@ -859,6 +851,7 @@ def maximum_ratio_combining(signals, snr_values):
     
     return combined_signal
 
+
 def process_signals_with_diversity(ofdm_canal, snr_values, num_antennas):
     """
     Procesa las señales recibidas en múltiples antenas usando diversidad.
@@ -880,6 +873,7 @@ def process_signals_with_diversity(ofdm_canal, snr_values, num_antennas):
     
     return combined_signal
 
+
 def reconstruct_image_with_diversity(bits_recuperados, ancho, alto):
     """
     Reconstruye la imagen a partir de los bits recuperados usando diversidad.
@@ -894,6 +888,7 @@ def reconstruct_image_with_diversity(bits_recuperados, ancho, alto):
     """
     reconstructed_image, _ = reconstruct_image_from_bits(bits_recuperados, ancho, alto)
     return reconstructed_image
+
 
 def plot_ber_vs_snr(ber_results, snr_range):
     """
@@ -913,6 +908,7 @@ def plot_ber_vs_snr(ber_results, snr_range):
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
     plt.legend()
     plt.show()
+
 
 def main():
     # Ruta de la imagen
@@ -946,7 +942,7 @@ def main():
     nc = calculate_nc(bw, delta_f)
     print(f"Número de subportadoras activas (N_c): {nc}")
     
-    # Crear array de los carriers
+    # Crear array de todos los carriers
     allCarriers = np.arange(nc)
     
     # Solicitar el porcentaje de subportadoras piloto
@@ -961,9 +957,6 @@ def main():
     # Solicitar valor de SNR en dB
     SNRdb = get_snr()
     
-    # Calcular el tamaño de la IFFT
-    n = calculate_ifft_size(nc)
-        
     # Definir otras variables necesarias
     pilotValue = 1 + 1j  # Valor de las subportadoras piloto
     n = 64  # Tamaño de la IFFT
@@ -979,7 +972,7 @@ def main():
     print(f"Primeros 10 símbolos que entraran a mod OFDM: {symbols[:10]}")
     
     # Aplicar DFT a los símbolos modulados (SC-FDM)
-    symbols_freq = apply_dft_precoding(symbols)
+    symbols_freq = apply_dft(symbols)
     
     # Dividir los símbolos modulados en bloques según el número de subportadoras de datos
     grupos_resultantes = Serie_paralelo(symbols_freq, abs(nc - len(pilotCarriers)))
@@ -1052,34 +1045,21 @@ def main():
     for i, grupo_rx in enumerate(ofdm_canal, start=1):
         # Remover el prefijo cíclico
         OFDM_RX_noCP = removeCP(grupo_rx, CP, n)
-        # if i == 1:  # Solo visualizar el primer símbolo como ejemplo
-        #     print(f"BLOQUE {i} - Longitud después de removeCP: {len(OFDM_RX_noCP)}")
-
         
         # Transformada al dominio de la frecuencia
         OFDM_demod = DFT(OFDM_RX_noCP)
-        # if i == 1:  # Solo visualizar el primer símbolo como ejemplo
-        #     print(f"BLOQUE {i} - Longitud después de DFT: {len(OFDM_demod)}")
         
         # Eliminar los ceros de la IFFT
         OFDM_demod_datos = OFDM_demod[:nc]
-        # if i == 1:  # Solo visualizar el primer símbolo como ejemplo
-        #     print(f"BLOQUE {i} - Longitud después de eliminar ceros: {len(OFDM_demod_datos)}")
         
         # Estimación del canal
         Hest_at_pilots, Hest = channelEstimate(OFDM_demod_datos, pilotCarriers, pilotValue, allCarriers, H_exact)
-        # if i == 1:  # Solo visualizar el primer símbolo como ejemplo
-        #     print(f"BLOQUE {i} - Estimación del canal: {Hest[:5]}")  # Muestra un subconjunto
         
         # Ecualización
         equalized_Hest = equalize(OFDM_demod_datos, Hest)
-        # if i == 1:  # Solo visualizar el primer símbolo como ejemplo
-        #     print(f"BLOQUE {i} - Datos ecualizados: {equalized_Hest[:5]}")
         
         # Extracción de datos
         QAM_est = get_payload(equalized_Hest, dataCarriers)
-        # if i == 1:  # Solo visualizar el primer símbolo como ejemplo
-        #     print(f"BLOQUE {i} - Símbolos extraídos: {QAM_est[:5]}")
         
         all_QAM_est.extend(QAM_est)  # Agregar los símbolos a la lista global)
         # Demapping
@@ -1120,9 +1100,6 @@ def main():
     print(f"bits erroneos: {errors}")
     print(f"BER: {ber}")
 
-    # Plotting (modified to include SC-FDM constellation)
-    plt.figure(figsize=(15, 6))
-    
     # Configuración de la simulación
     modulation_types = ["qpsk", "16qam", "64qam"]
     SNR_range = range(0, 60, 5)  # De 0 a 30 dB
@@ -1130,7 +1107,85 @@ def main():
     # # Simulación Monte Carlo
     ber_results = monte_carlo_simulation(nc, bitsbn, H_exact, allCarriers, pilotCarriers, dataCarriers, pilotValue, n, modulation_types, SNR_range, channelResponse, CP)
 
+    
+    # Simular recepción con diversidad
+    num_antennas = 2  # Número de antenas a utilizar
+    snr_values = [10, 15]  # SNR para cada antena (puedes ajustar estos valores)
 
+    # Lista para almacenar señales de múltiples antenas
+    ofdm_canal_diversidad = []
+
+    # Simular recepción en múltiples antenas
+    for grupo_rx in ofdm_canal:
+        # Simular señales para cada antena con diferentes condiciones de ruido
+        antena_signals = []
+        for i in range(num_antennas):
+            # Añadir variación de ruido para cada antena
+            noise_variation = 0.1 * (i + 1)  # Variar ligeramente el ruido entre antenas
+            OFDM_RX_antena = channel(grupo_rx, SNRdb + i, noise_variation)
+            antena_signals.append(OFDM_RX_antena)
+        
+        # Almacenar señales de múltiples antenas
+        ofdm_canal_diversidad.append(antena_signals)
+
+    # Combinar señales de múltiples antenas usando MRC
+    ofdm_canal_combinado = []
+    for antena_signals in ofdm_canal_diversidad:
+        combined_signal = process_signals_with_diversity(antena_signals, snr_values, num_antennas)
+        ofdm_canal_combinado.append(combined_signal)
+
+    # Reemplazar ofdm_canal con las señales combinadas
+    ofdm_canal = ofdm_canal_combinado
+
+    # DECODIFICACIÓN con señales combinadas
+    symbols_esti = []
+    all_QAM_est = []
+    all_hardDecision = []
+
+    for i, grupo_rx in enumerate(ofdm_canal, start=1):
+        # Remover el prefijo cíclico
+        OFDM_RX_noCP = removeCP(grupo_rx, CP, n)
+        
+        # Transformada al dominio de la frecuencia
+        OFDM_demod = DFT(OFDM_RX_noCP)
+        
+        # Eliminar los ceros de la IFFT
+        OFDM_demod_datos = OFDM_demod[:nc]
+        
+        # Estimación del canal
+        Hest_at_pilots, Hest = channelEstimate(OFDM_demod_datos, pilotCarriers, pilotValue, allCarriers, H_exact)
+        
+        # Ecualización
+        equalized_Hest = equalize(OFDM_demod_datos, Hest)
+        
+        # Extracción de datos
+        QAM_est = get_payload(equalized_Hest, dataCarriers)
+        
+        all_QAM_est.extend(QAM_est)
+        
+        # Demapping
+        PS_est, hardDecision = Demapping(QAM_est, demapping_table)
+        all_hardDecision.extend(hardDecision)
+
+        # Bits recuperados
+        rx_bits_array = PS_est.flatten()
+        symbols_esti.append(rx_bits_array)
+
+    # Resto del código de procesamiento de bits...
+
+    # Visualización de resultados de diversidad
+    plt.figure(figsize=(10, 6))
+    plt.title('Señales Recibidas con Diversidad')
+    for i, signal in enumerate(ofdm_canal):
+        plt.plot(np.abs(signal), label=f'Señal Combinada {i+1}')
+    plt.xlabel('Muestras')
+    plt.ylabel('Amplitud')
+    plt.legend()
+    plt.show()
+
+    # Opcional: Graficar BER vs SNR para diversidad
+    plot_ber_vs_snr(ber_results, SNR_range)
+    
     # Crear una figura para contener todo
     fig = plt.figure(figsize=(15, 6))  # Ajusta el tamaño de la ventana
 
@@ -1165,6 +1220,7 @@ def main():
     
     # Subplot 5: Constelación con decisiones duras
     ax5 = fig.add_subplot(2, 3, 5)  # 2 filas, 3 columnas, posición 5
+
     # Graficar la constelación de todos los símbolos QAM recibidos en ax5
     ax5.scatter(all_QAM_est.real, all_QAM_est.imag, color='blue', s=5, alpha=0.5)
     ax5.plot(all_hardDecision.real, all_hardDecision.imag, 'ro')  # Puntos rojos en las decisiones duras
